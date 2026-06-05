@@ -63,6 +63,48 @@ describe("EventsController (integration)", () => {
       expect(response.body[0].id).toBe(1);
     });
 
+    it("должен принимать вьюпорт через антимеридиан", async () => {
+      mockEventsService.findByViewport.mockResolvedValue([]);
+
+      const response = await request(app.getHttpServer())
+        .get("/api/events")
+        .query({
+          northEastLat: 20,
+          northEastLng: 190,
+          southWestLat: 10,
+          southWestLng: 170,
+        });
+
+      expect(response.status).toBe(200);
+      expect(mockEventsService.findByViewport).toHaveBeenCalledWith({
+        northEastLat: 20,
+        northEastLng: 190,
+        southWestLat: 10,
+        southWestLng: 170,
+      });
+    });
+
+    it("должен принимать вьюпорт через антимеридиан с southWestLng меньше -180", async () => {
+      mockEventsService.findByViewport.mockResolvedValue([]);
+
+      const response = await request(app.getHttpServer())
+        .get("/api/events")
+        .query({
+          northEastLat: 55.56030491940223,
+          northEastLng: -178.75650200913995,
+          southWestLat: 54.35763945371127,
+          southWestLng: -181.0994478456442,
+        });
+
+      expect(response.status).toBe(200);
+      expect(mockEventsService.findByViewport).toHaveBeenCalledWith({
+        northEastLat: 55.56030491940223,
+        northEastLng: -178.75650200913995,
+        southWestLat: 54.35763945371127,
+        southWestLng: -181.0994478456442,
+      });
+    });
+
     it("должен вернуть 400 если параметры вьюпорта отсутствуют", async () => {
       const response = await request(app.getHttpServer()).get("/api/events");
       expect(response.status).toBe(400);

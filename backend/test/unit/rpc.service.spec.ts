@@ -1,3 +1,4 @@
+import { Logger } from "@nestjs/common";
 import { Test, TestingModule } from "@nestjs/testing";
 
 import { RPC_ERROR_CODES } from "../../src/modules/rpc/rpc-error-codes";
@@ -82,7 +83,12 @@ describe("RpcService", () => {
     });
 
     it("должен вернуть ошибку INTERNAL_ERROR если handler бросает неожиданное исключение", async () => {
-      mockHandler.execute.mockRejectedValue(new Error("db failure"));
+      const unexpectedError = new Error("db failure");
+      const loggerErrorSpy = jest
+        .spyOn(Logger.prototype, "error")
+        .mockImplementation();
+
+      mockHandler.execute.mockRejectedValue(unexpectedError);
       mockRegistry.resolve.mockReturnValue(mockHandler);
 
       const result = await service.handle({
@@ -92,6 +98,10 @@ describe("RpcService", () => {
         id: 1,
       });
       expect(result.error?.code).toBe(RPC_ERROR_CODES.INTERNAL_ERROR);
+      expect(loggerErrorSpy).toHaveBeenCalledWith(
+        "Внутренняя ошибка обработки RPC запроса",
+        unexpectedError,
+      );
     });
 
     it("должен успешно вернуть результат от handler", async () => {
