@@ -12,7 +12,6 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -24,6 +23,11 @@ import {
 import { useStatistics } from "@/entities/statistics/hooks/useStatistics";
 import { formatCoord, formatDate, formatSpeed } from "@/shared/lib/utils";
 import type { Event } from "@/shared/types";
+import {
+  AppDialog,
+  AppDialogContent,
+  AppDialogTitle,
+} from "@/shared/ui/AppDialog";
 
 // Карточка одной метрики: показывает скелетон во время загрузки
 function StatCard({
@@ -79,9 +83,9 @@ function LastEventDialog({
   onLocate?: (lat: number, lng: number, event?: Event) => void;
 }) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent showCloseButton>
-        <DialogTitle>Событие #{event.id}</DialogTitle>
+    <AppDialog open={open} onOpenChange={onOpenChange}>
+      <AppDialogContent showCloseButton aria-describedby={undefined}>
+        <AppDialogTitle>Событие #{event.id}</AppDialogTitle>
         <Separator />
         <div className="flex justify-between">
           <span className="text-muted-foreground">ID объекта</span>
@@ -116,8 +120,8 @@ function LastEventDialog({
             </Button>
           </>
         )}
-      </DialogContent>
-    </Dialog>
+      </AppDialogContent>
+    </AppDialog>
   );
 }
 

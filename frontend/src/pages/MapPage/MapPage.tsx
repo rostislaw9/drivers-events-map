@@ -1,33 +1,19 @@
 import { useCallback, useRef } from "react";
 
 import type { Event } from "@/shared/types";
-import { MapWidget } from "@/widgets/Map/MapWidget";
+import { MapWidget, MapWidgetRef } from "@/widgets/Map/MapWidget";
 import { StatsDashboard } from "@/widgets/StatsDashboard/StatsDashboard";
 
 export function MapPage() {
-  const refetchEventsRef = useRef<(() => void) | null>(null);
-  const locateRef = useRef<
-    ((lat: number, lng: number, event?: Event) => void) | null
-  >(null);
-
-  const handleRefreshReady = useCallback((refetch: () => void) => {
-    refetchEventsRef.current = refetch;
-  }, []);
+  const mapRef = useRef<MapWidgetRef>(null);
 
   const handleRefreshEvents = useCallback(() => {
-    refetchEventsRef.current?.();
+    mapRef.current?.refreshEvents();
   }, []);
-
-  const handleLocateReady = useCallback(
-    (locate: (lat: number, lng: number, event?: Event) => void) => {
-      locateRef.current = locate;
-    },
-    [],
-  );
 
   const handleLocate = useCallback(
     (lat: number, lng: number, event?: Event) => {
-      locateRef.current?.(lat, lng, event);
+      mapRef.current?.locate(lat, lng, event);
     },
     [],
   );
@@ -44,10 +30,7 @@ export function MapPage() {
 
       {/* Карта */}
       <main className="flex-1 overflow-hidden px-6 pb-6">
-        <MapWidget
-          onRefreshReady={handleRefreshReady}
-          onLocateReady={handleLocateReady}
-        />
+        <MapWidget ref={mapRef} />
       </main>
     </div>
   );

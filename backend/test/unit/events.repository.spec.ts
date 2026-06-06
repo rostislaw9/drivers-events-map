@@ -19,7 +19,27 @@ describe("EventsRepository", () => {
     return find.mock.calls[0][0];
   }
 
-  it("строит один гео-фильтр для обычного диапазона долготы", async () => {
+  function expectPolygonGeometry(
+    westLng: number,
+    eastLng: number,
+    southLat: number,
+    northLat: number,
+  ) {
+    return {
+      type: "Polygon",
+      coordinates: [
+        [
+          [westLng, southLat],
+          [eastLng, southLat],
+          [eastLng, northLat],
+          [westLng, northLat],
+          [westLng, southLat],
+        ],
+      ],
+    };
+  }
+
+  it("строит Polygon для обычного вьюпорта", async () => {
     const filter = await expectFindFilter({
       northEastLat: 20,
       northEastLng: 50,
@@ -30,16 +50,13 @@ describe("EventsRepository", () => {
     expect(filter).toEqual({
       location: {
         $geoWithin: {
-          $box: [
-            [30, 10],
-            [50, 20],
-          ],
+          $geometry: expectPolygonGeometry(30, 50, 10, 20),
         },
       },
     });
   });
 
-  it("разбивает диапазон через антимеридиан на два гео-фильтра", async () => {
+  it("строит MultiPolygon для вьюпорта, пересекающего антимеридиан вправо (northEastLng > 180)", async () => {
     const filter = await expectFindFilter({
       northEastLat: 20,
       northEastLng: 190,
@@ -48,66 +65,94 @@ describe("EventsRepository", () => {
     });
 
     expect(filter).toEqual({
-      $or: [
-        {
-          location: {
-            $geoWithin: {
-              $box: [
-                [170, 10],
-                [180, 20],
-              ],
-            },
+      location: {
+        $geoWithin: {
+          $geometry: {
+            type: "MultiPolygon",
+            coordinates: [
+              [expectPolygonGeometry(170, 180, 10, 20).coordinates[0]],
+              [expectPolygonGeometry(-180, -170, 10, 20).coordinates[0]],
+            ],
           },
         },
-        {
-          location: {
-            $geoWithin: {
-              $box: [
-                [-180, 10],
-                [-170, 20],
-              ],
-            },
-          },
-        },
-      ],
+      },
     });
   });
 
-  it("разбивает диапазон через -180 на два гео-фильтра", async () => {
+  it("строит MultiPolygon для вьюпорта, пересекающего антимеридиан влево (southWestLng < -180)", async () => {
     const filter = await expectFindFilter({
-      northEastLat: 55.56030491940223,
-      northEastLng: -178.75650200913995,
-      southWestLat: 54.35763945371127,
-      southWestLng: -181.0994478456442,
+      northEastLat: 20,
+      northEastLng: -170,
+      southWestLat: 10,
+      southWestLng: -190,
     });
 
     expect(filter).toEqual({
-      $or: [
-        {
-          location: {
-            $geoWithin: {
-              $box: [
-                [178.9005521543558, 54.35763945371127],
-                [180, 55.56030491940223],
-              ],
-            },
+      location: {
+        $geoWithin: {
+          $geometry: {
+            type: "MultiPolygon",
+            coordinates: [
+              [expectPolygonGeometry(170, 180, 10, 20).coordinates[0]],
+              [expectPolygonGeometry(-180, -170, 10, 20).coordinates[0]],
+            ],
           },
         },
-        {
-          location: {
-            $geoWithin: {
-              $box: [
-                [-180, 54.35763945371127],
-                [-178.75650200913995, 55.56030491940223],
-              ],
-            },
-          },
-        },
-      ],
+      },
     });
   });
 
-  it("считает диапазон 360 градусов покрытием всего мира", async () => {
+  it("строит MultiPolygon для антимеридиана вправо где западный кусок сам > 180°", async () => {
+    // northEastLng=203.9, southWestLng=-6.1 -> левый кусок [-6.1..180] = 186.1° -> нужен split
+    const filter = await expectFindFilter({
+      northEastLat: 82,
+      northEastLng: 203,
+      southWestLat: -6,
+      southWestLng: -6,
+    });
+
+    const geometry = filter.location.$geoWithin.$geometry;
+    expect(geometry.type).toBe("MultiPolygon");
+    // Все куски должны быть < 180° по долготе
+    for (const [ring] of geometry.coordinates) {
+      const lngs = ring.map(([lng]: [number, number]) => lng);
+      const span = Math.max(...lngs) - Math.min(...lngs);
+      expect(span).toBeLessThan(180);
+    }
+    // Правый кусок после антимеридиана: [MIN_LONGITUDE .. 203-360] = [-180 .. -157]
+    const allWest = geometry.coordinates.map(
+      ([[first]]: [[[number, number]]]) => first[0],
+    );
+    expect(allWest.some((w: number) => w < 0 && w >= -180)).toBe(true);
+  });
+
+  it("строит MultiPolygon для широкого вьюпорта > 180° (без пересечения антимеридиана)", async () => {
+    const filter = await expectFindFilter({
+      northEastLat: 84,
+      northEastLng: 152,
+      southWestLat: 1,
+      southWestLng: -67,
+    });
+
+    const span = 152 - -67;
+    const midLng = -67 + span / 2;
+
+    expect(filter).toEqual({
+      location: {
+        $geoWithin: {
+          $geometry: {
+            type: "MultiPolygon",
+            coordinates: [
+              [expectPolygonGeometry(-67, midLng, 1, 84).coordinates[0]],
+              [expectPolygonGeometry(midLng, 152, 1, 84).coordinates[0]],
+            ],
+          },
+        },
+      },
+    });
+  });
+
+  it("возвращает пустой фильтр {} для вьюпорта, покрывающего весь мир (span >= 360°)", async () => {
     const filter = await expectFindFilter({
       northEastLat: 20,
       northEastLng: 180,
@@ -115,35 +160,6 @@ describe("EventsRepository", () => {
       southWestLng: -180,
     });
 
-    expect(filter).toEqual({
-      location: {
-        $geoWithin: {
-          $box: [
-            [-180, 10],
-            [180, 20],
-          ],
-        },
-      },
-    });
-  });
-
-  it("считает диапазон больше 360 градусов покрытием всего мира", async () => {
-    const filter = await expectFindFilter({
-      northEastLat: 20,
-      northEastLng: 300,
-      southWestLat: 10,
-      southWestLng: -100,
-    });
-
-    expect(filter).toEqual({
-      location: {
-        $geoWithin: {
-          $box: [
-            [-180, 10],
-            [180, 20],
-          ],
-        },
-      },
-    });
+    expect(filter).toEqual({});
   });
 });

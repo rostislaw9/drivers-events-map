@@ -1,6 +1,13 @@
 import type { Feature, FeatureCollection, Point } from "geojson";
 import type { GeoJSONFeature, GeoJSONSource } from "mapbox-gl";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import Map, {
   Layer,
   NavigationControl,
@@ -58,20 +65,13 @@ function eventsToGeoJson(events: Event[]): FeatureCollection {
   };
 }
 
-interface MapWidgetProps {
-  // Колбэк вызывается при монтировании и передаёт наружу функцию повторного запроса событий
-  onRefreshReady?: (refetch: () => void) => void;
-  // Колбэк вызывается при монтировании и передаёт наружу функцию перелёта карты к координатам.
-  // Третий аргумент event — событие, попап которого откроется после приземления.
-  onLocateReady?: (
-    locate: (lat: number, lng: number, event?: Event) => void,
-  ) => void;
+// Реф для экспорта методов компонента наружу
+export interface MapWidgetRef {
+  refreshEvents: () => void;
+  locate: (lat: number, lng: number, event?: Event) => void;
 }
 
-export function MapWidget({
-  onRefreshReady,
-  onLocateReady,
-}: MapWidgetProps = {}) {
+export const MapWidget = forwardRef<MapWidgetRef>(function MapWidget(_, ref) {
   const mapRef = useRef<MapRef>(null);
   // Флаг: карта выполняет flyTo — не обновляем вьюпорт во время полёта,
   // иначе Source пересчитывается и кластеры смещаются до приземления
@@ -86,32 +86,6 @@ export function MapWidget({
   } | null>(null);
 
   const { data: events = [], isError, refetch } = useEvents(viewport);
-
-  // Передаём refetch наружу для кнопки "Обновить"
-  useEffect(() => {
-    onRefreshReady?.(() => void refetch());
-  }, [onRefreshReady, refetch]);
-
-  // Передаём flyTo наружу для кнопки "Найти на карте"
-  // После приземления открываем попап для переданного события
-  useEffect(() => {
-    onLocateReady?.((lat, lng, event) => {
-      isFlyingRef.current = true;
-      const map = mapRef.current;
-      map?.flyTo({
-        center: [lng, lat],
-        zoom: Math.max(map.getZoom(), 16),
-        duration: 1200,
-      });
-      map?.getMap().once("moveend", () => {
-        isFlyingRef.current = false;
-        if (mapRef.current) setViewport(boundsFromMap(mapRef.current));
-        if (event) {
-          setPopupState({ lat: event.lat, lng: event.lng, events: [event] });
-        }
-      });
-    });
-  }, [onLocateReady]);
 
   // Показываем toast при ошибке загрузки событий
   useEffect(() => {
@@ -137,6 +111,48 @@ export function MapWidget({
     acc[e.id] = e;
     return acc;
   }, {});
+
+  // Функция для перехода к координатам и открытия попапа
+  const locate = useCallback((lat: number, lng: number, event?: Event) => {
+    isFlyingRef.current = true;
+
+    const map = mapRef.current;
+
+    map?.flyTo({
+      center: [lng, lat],
+      zoom: Math.max(map.getZoom(), 16),
+      duration: 1200,
+    });
+
+    map?.getMap().once("moveend", () => {
+      isFlyingRef.current = false;
+
+      if (mapRef.current) {
+        setViewport(boundsFromMap(mapRef.current));
+      }
+
+      if (event) {
+        setPopupState({
+          lat: event.lat,
+          lng: event.lng,
+          events: [event],
+        });
+      }
+    });
+  }, []);
+
+  // Экспортируем методы компонента наружу
+  useImperativeHandle(
+    ref,
+    () => ({
+      refreshEvents: () => {
+        void refetch();
+      },
+
+      locate,
+    }),
+    [refetch, locate],
+  );
 
   // Обновляем вьюпорт после завершения движения карты.
   // Во время flyTo пропускаем промежуточные moveend-события, чтобы Source
@@ -459,4 +475,4 @@ export function MapWidget({
       </Map>
     </div>
   );
-}
+});

@@ -19,7 +19,7 @@ export class ViewportQueryDto {
   })
   @Type(() => Number)
   @IsNumber()
-  @Min(-180)
+  @Min(-540)
   @Max(540)
   northEastLng: number;
 
@@ -40,6 +40,6 @@ export class ViewportQueryDto {
   @Type(() => Number)
   @IsNumber()
   @Min(-540)
-  @Max(180)
+  @Max(540)
   southWestLng: number;
 }
